@@ -4,9 +4,14 @@ from PyQt5.QtCore import pyqtSlot, QSize, Qt
 from PyQt5.QtWidgets import QDialog, QMessageBox, QFileDialog
 from Qt_Main import Ui_Form
 from structure import Ui_structure
+import numpy as np
+import pandas as pd
+
 """
 20200302
 写入了write方法，主要用于写入操作
+20200310
+添加了材料列表，使用了pandas
 """
 
 class main_interface(QtWidgets.QMainWindow, Ui_Form):
@@ -34,29 +39,49 @@ class Structure(QtWidgets.QDialog,Ui_structure):
         super(Structure, self).__init__(parent)
         self.setupUi(self)
         self.pushButton.clicked.connect(self.open)
+        self.pushButton_2.clicked.connect(self.material_setting)
+
         self.pushButton_3.clicked.connect(self.write)
+        self.open_filename = []
+        mode = common_method(self.open_filename)
+        self.comboBox_2.addItems(mode.material_list())
+
+
 
     def open(self):
         """
-        打开mesh文件,并且将求解器类型打印到窗口
+        打开mesh文件,获取路径path（self.open_filename），并且将求解器类型打印到窗口
         """
-        open_filename = QFileDialog.getOpenFileName(self, "choose file")
-        print(open_filename[0])
-        mesh_file = common_method()
-        #输出求解器类型
-        self.label_5.setText( mesh_file.solver_type(open_filename))
+        self.open_filename = QFileDialog.getOpenFileName(self, "choose file")
+        print(self.open_filename[0])
+        # 输出求解器类型
+        mesh_file = common_method(self.open_filename)
+        self.label_5.setText( mesh_file.solver_type())
+
+    def material_setting(self):
+        """
+        设置材料和属性
+        :return:
+
+        """
+        pass
+
+
 
     def write(self):
         """
-        solver button 的方法定义
+        solver button 的方法定义,模态模块
         :return:
         """
         print(self.lineEdit.text())
-        a = self.lineEdit.text()
+        self.mode_target = self.lineEdit.text()
         try :
-            a = float(a)
+            self.mode_target = float(self.mode_target)
         except Exception:
             QMessageBox.information(self, 'message', 'Please input a number')
+        #写模态文件,需要加self吗？
+        self.mode = write_method(self.open_filename)
+        self.mode.Mode(self.mode_target)
 
     # @pyqtSlot()
     # def on_pushButton3_clicked(self):
@@ -71,31 +96,40 @@ class Structure(QtWidgets.QDialog,Ui_structure):
 #结构模块结束
 
 class common_method():
-    def __init__(self):
+    '''
+    该类主要争对网格文件进行识别，包括求解类型，零部件数量，set节点列表
+    '''
+    def __init__(self,path):
         self.component_number1 = []
         self.component_number2 = []
         self.set = []
+        self.path = path
 
+    def open_solver(self):
+        """
+        打开网格文件
+        :param path:
+        :return:
+        """
+        self.solver_file = open(r'{}'.format(self.path[0]), 'r')
 
-    def solver_type(self,path):
+    def solver_type(self):
         """
-        获取求解器类型
+        根据文件路径，获取求解器类型。改进：针对无后缀或作不是别后缀做出警告。
         """
-        self.path = path[0]
-        self.solver_file = open(r'{}'.format(path[0]), 'r')
+        self.path = self.path[0]
         solver = {'fem': 'Optistruct', 'inp': 'ABAQUS', 'bdf': 'NASTRAN'}
         solver1 = [self.path]
-        #solver_type = solver[self.on_pushButton_clicked.open_filename[0][-3:]]
         solver_type = solver[solver1[0][-3:]]
         return solver_type
         #print(solver_type)
 
     def component_number(self):
         """
-        获取component number,仅支持nastran格式
+        获取component number,仅支持nastran格式,返回值是零件数量
         """
         #solver_file = open(self.on_pushButton_clicked.solver_type)
-
+        self.open_solver()
         for i in self.solver_file.readlines():
             if i[:6] == 'CQUAD4' or 'CTETRA':
                 self.component_number1.append(int(i[20:24].strip()))
@@ -105,14 +139,25 @@ class common_method():
 
     def get_set(self):
         '''
-        获取求解文件set
+        获取求解文件set，返回值是set列表
         :return:
         '''
+        self.open_solver()
         for i in self.solver_file.readlines():
             if i[0:3] == 'SET':
                 self.set.append(i.split('=')[1].strip()[:-1])
+        self.solver_file.close()
         return self.set
 
+    def material_list(self):
+        """
+        获取材料列表
+        :return:
+        """
+        material_list = pd.read_csv(open(r'D:\python_study\python_study\PYTHON\Python\material.csv'))
+        Material_Name_list = list(material_list['Material_Name'])
+
+        return Material_Name_list
     @classmethod
     def remove_duplication(cls, list1):
         """
@@ -148,8 +193,8 @@ class common_method():
         return False
 
 class write_method(common_method):
-    def __init__(self):
-        super(write_method, self).__init__()
+    def __init__(self,path):
+        super().__init__(path)
         self.spc = []
         self.load_id = [3,4,5,6,7,8,9,10]#
         self.a = []  #spcd
@@ -157,10 +202,49 @@ class write_method(common_method):
         self.freedom = [1,2,3,4,5,6]
 
 
-    def material(self):
+    def Material(selfmaterial,Material):
+
         pass
 
-    def load(self,acc):
+    def Static(self):
+        pass
+#Moode,FR = frequency
+    def Mode(self, target_FR):
+        """
+        SUBCASE        1
+        LABEL modal
+        ANALYSIS MODES
+        METHOD(STRUCTURE) =        1
+        BEGIN BULK
+        INCLUDE '**********'
+        PSHELL         1       10.1            1               1        0.0
+        MAT1           1210000.0        0.3     7.85-9
+        EIGRL          1           200.0                                    MASS
+        ENDDATA
+        """
+        self.fixed = self.get_set()
+        self.target_FR = target_FR
+        self.key_words ="""
+SUBCASE        1
+LABEL modal
+ANALYSIS MODES
+METHOD(STRUCTURE) =        1
+BEGIN BULK
+INCLUDE '{}'
+PSHELL         1       10.1            1               1        0.0
+MAT1           1210000.0        0.3     7.85-9
+EIGRL,1,,{},,,,,MASS
+ENDDATA
+        """
+        print(self.key_words)
+        with open(r'C:\Users\MIKE\Desktop\simulation_test\Frequency_solver','w') as mode:
+            mode.write(self.key_words.format(self.path[0], self.target_FR))
+
+
+
+
+#vibration
+    def Vibration(self,acc):
         self.acc = acc
         self.ACC = ''
         #获取spc集合点
